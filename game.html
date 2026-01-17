@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess Game</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Chess&display=swap');
+        /* @import url('https://fonts.googleapis.com/css2?family=Chess&display=swap'); */
 
         :root {
             --bg-color: #f4f4f4;
@@ -65,7 +65,7 @@
         }
 
         .piece {
-            font-family: 'Chess', sans-serif;
+            /* font-family: 'Chess', sans-serif; */
             font-size: calc(80vmin / 16);
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
             z-index: 1;
@@ -162,6 +162,12 @@
             font-size: 20px;
         }
 
+        #room-info {
+            margin: 10px 0;
+            font-size: 16px;
+            color: #666;
+        }
+
         #promotion-modal {
             position: fixed;
             top: 50%;
@@ -215,14 +221,19 @@
         body.dark-mode #promotion-modal button:hover {
             background: #777;
         }
+
+        body.dark-mode #room-info {
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
     <button id="theme-toggle">☀️</button>
+    <div id="room-info">Room: Loading...</div>
     <div id="container">
         <div id="chessboard"></div>
     </div>
-    <div id="status">White's turn</div>
+    <div id="status">Connecting...</div>
     <div id="promotion-modal">
         <p>Promote your pawn to:</p>
         <button data-piece="q">♕</button>
@@ -231,61 +242,79 @@
         <button data-piece="b">♗</button>
     </div>
 
-    <!-- Include chess.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
+        // Get room ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const ROOM_ID = urlParams.get('room');
+    
+        if (!ROOM_ID) {
+            window.location.href = 'lobby.html';
+        }
+    
         const board = document.getElementById('chessboard');
         const status = document.getElementById('status');
+        const roomInfo = document.getElementById('room-info');
         const themeToggle = document.getElementById('theme-toggle');
         const promotionModal = document.getElementById('promotion-modal');
         let selectedPiece = null;
         let gameOver = false;
-        let pendingMove = null;
-
-        // Initialize chess.js
+    
         const chess = new Chess();
         const pieceMap = {
             'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
             'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'
         };
-
+    
         let isDarkTheme = false;
-
+        let myColor = null;
+    
+        // Connect to socket
         const socket = io("http://localhost:3000");
-        const ROOM_ID = "room1"; // temporary room
-
-        // if (fromSquareNotation === squareNotation) {
-        // selectedPiece = null;
-        // return;
-        // }
-
-        socket.on("roomFull", () => {
-        alert("This room already has 2 players.");
-        socket.disconnect();
+    
+        roomInfo.textContent = `Room: ${ROOM_ID}`;
+    
+        // Socket event listeners
+        socket.on('connect', () => {
+            console.log('Connected, rejoining room:', ROOM_ID);
+            // Rejoin the room when connected
+            socket.emit("rejoinGame", ROOM_ID);
         });
-
-
+    
+        socket.on("roomNotFound", () => {
+            alert("Room not found!");
+            window.location.href = 'lobby.html';
+        });
+    
+        socket.on("roomFull", () => {
+            alert("This room is full!");
+            window.location.href = 'lobby.html';
+        });
+    
         socket.on("playerColor", (color) => {
             myColor = color;
-
+            status.textContent = `You are ${color === 'w' ? 'White' : 'Black'}`;
+            
             if (myColor === "b") {
                 board.classList.add("rotated");
-            } else {
-                board.classList.remove("rotated");
             }
+            
+            console.log('My color:', color);
         });
-
-        
-        let myColor = null;
-
-        socket.on("playerColor", (color) => {
-        myColor = color;
+    
+        socket.on("gameState", (fen) => {
+            chess.load(fen);
+            renderBoard();
+            console.log('Board updated');
         });
-
-
-        socket.emit("joinGame", ROOM_ID);
-
+    
+        socket.on("playerDisconnected", () => {
+            alert("Other player disconnected!");
+            window.location.href = 'lobby.html';
+        });
+    
+        // Theme toggle handler
         themeToggle.addEventListener('click', () => {
             if (gameOver) return;
             isDarkTheme = !isDarkTheme;
@@ -293,7 +322,8 @@
             document.body.classList.toggle('dark-mode');
             updatePieceColors();
         });
-
+    
+        // Game functions
         function createBoard() {
             board.innerHTML = '';
             for (let i = 0; i < 8; i++) {
@@ -309,7 +339,7 @@
             }
             renderBoard();
         }
-
+    
         function renderBoard() {
             const fen = chess.fen().split(' ')[0];
             const rows = fen.split('/');
@@ -318,7 +348,7 @@
                 for (let char of rows[i]) {
                     if (isNaN(char)) {
                         const square = board.querySelector(`.square[data-row="${i}"][data-col="${col}"]`);
-                        square.innerHTML = ''; // Clear the square before rendering
+                        square.innerHTML = '';
                         const piece = document.createElement('span');
                         piece.classList.add('piece');
                         piece.classList.add(/[PNBRQK]/.test(char) ? 'white-piece' : 'black-piece');
@@ -326,7 +356,6 @@
                         square.appendChild(piece);
                         col++;
                     } else {
-                        // Clear squares that should be empty according to FEN
                         for (let j = 0; j < parseInt(char); j++) {
                             const square = board.querySelector(`.square[data-row="${i}"][data-col="${col}"]`);
                             square.innerHTML = '';
@@ -338,7 +367,7 @@
             highlightKingInCheck();
             updateStatus();
         }
-
+    
         function updatePieceColors() {
             document.querySelectorAll('.piece').forEach(piece => {
                 piece.classList.remove('white-piece', 'black-piece');
@@ -346,31 +375,11 @@
                 piece.classList.add(/[♙♖♘♗♕♔]/.test(pieceText) ? 'white-piece' : 'black-piece');
             });
         }
-
+    
         function squareToNotation(row, col) {
             return String.fromCharCode(97 + col) + (8 - row);
         }
-
-        function animatePiece(fromRow, fromCol, toRow, toCol, pieceElement, callback) {
-            const fromSquare = board.querySelector(`.square[data-row="${fromRow}"][data-col="${fromCol}"]`);
-            const toSquare = board.querySelector(`.square[data-row="${toRow}"][data-col="${toCol}"]`);
-            const squareSize = fromSquare.offsetWidth;
-            const deltaX = (toCol - fromCol) * squareSize;
-            const deltaY = (toRow - fromRow) * squareSize;
-
-            pieceElement.style.transition = 'transform 0.3s ease-in-out';
-            pieceElement.style.transform = `translate(${deltaX - squareSize / 2}px, ${deltaY - squareSize / 2}px)`;
-
-            pieceElement.addEventListener('transitionend', function handler() {
-                pieceElement.style.transition = '';
-                pieceElement.style.transform = 'translate(-50%, -50%)';
-                fromSquare.removeChild(pieceElement);
-                toSquare.appendChild(pieceElement);
-                callback();
-                pieceElement.removeEventListener('transitionend', handler);
-            }, { once: true });
-        }
-
+    
         function updateStatus() {
             if (chess.game_over()) {
                 if (chess.in_checkmate()) {
@@ -387,7 +396,7 @@
                 status.textContent = `${chess.turn() === 'w' ? 'White' : 'Black'}'s turn`;
             }
         }
-
+    
         function highlightKingInCheck() {
             document.querySelectorAll('.square').forEach(s => s.classList.remove('check'));
             if (chess.in_check()) {
@@ -412,7 +421,7 @@
                 }
             }
         }
-
+    
         function showPromotionModal(callback) {
             promotionModal.style.display = 'block';
             const buttons = promotionModal.querySelectorAll('button');
@@ -424,59 +433,47 @@
                 };
             });
         }
-
+    
         function handleSquareClick(e) {
-
-            if (!myColor) return;
-            if (chess.turn() !== myColor) return;
-
+            console.log('Square clicked. myColor:', myColor, 'turn:', chess.turn());
+            
+            if (!myColor) {
+                console.log('No color assigned yet');
+                return;
+            }
+            if (chess.turn() !== myColor) {
+                console.log('Not your turn');
+                return;
+            }
             if (gameOver || promotionModal.style.display === 'block') return;
-
+    
             const square = e.target.closest('.square');
             const row = parseInt(square.dataset.row);
             const col = parseInt(square.dataset.col);
             const squareNotation = squareToNotation(row, col);
-
+    
             document.querySelectorAll('.square').forEach(s => {
                 s.classList.remove('selected', 'possible', 'capture');
             });
-
+    
             if (selectedPiece) {
                 const fromRow = selectedPiece.row;
                 const fromCol = selectedPiece.col;
                 const fromSquareNotation = squareToNotation(fromRow, fromCol);
-                const fromSquare = board.querySelector(`.square[data-row="${fromRow}"][data-col="${fromCol}"]`);
-                const pieceElement = fromSquare.querySelector('.piece');
-
+    
                 const piece = chess.get(fromSquareNotation);
-                const isPawnPromotion = piece.type === 'p' && ((piece.color === 'w' && row === 0) || (piece.color === 'b' && row === 7));
-
+                const isPawnPromotion = piece && piece.type === 'p' && 
+                    ((piece.color === 'w' && row === 0) || (piece.color === 'b' && row === 7));
+    
                 if (isPawnPromotion) {
-                    pendingMove = { fromRow, fromCol, toRow: row, toCol: col, pieceElement };
                     showPromotionModal((promotionPiece) => {
                         const move = {
                             from: fromSquareNotation,
                             to: squareNotation,
                             promotion: promotionPiece
                         };
-                        // const legalMove = chess.move(move);
-                        // if (legalMove) {
-                        //     animatePiece(fromRow, fromCol, row, col, pieceElement, () => {
-                        //         pieceElement.textContent = pieceMap[legalMove.promotion.toUpperCase()];
-                        //         pieceElement.classList.remove('white-piece', 'black-piece');
-                        //         pieceElement.classList.add(chess.turn() === 'b' ? 'white-piece' : 'black-piece');
-                        //         handlePostMove(legalMove);
-                        //     });
-                        // }
-
-                        socket.emit("move", {
-                            roomId: ROOM_ID,
-                            move
-                            });
-
-                        selectedPiece = null;
-
-                        pendingMove = null;
+                        console.log('Sending move:', move);
+                        socket.emit("move", { roomId: ROOM_ID, move });
                         selectedPiece = null;
                     });
                 } else {
@@ -484,36 +481,9 @@
                         from: fromSquareNotation,
                         to: squareNotation
                     };
-                    // const legalMove = chess.move(move);
-                    // if (legalMove) {
-                    //     // Handle en passant capture visually
-                    //     if (legalMove.flags.includes('e')) {
-                    //         // Determine the captured pawn's position
-                    //         const capturedRow = chess.turn() === 'w' ? row - 1 : row + 1; // Captured pawn is on the same row as the starting position
-                    //         const capturedCol = col;
-                    //         const capturedSquare = board.querySelector(`.square[data-row="${capturedRow}"][data-col="${capturedCol}"]`);
-                    //         if (capturedSquare) {
-                    //             capturedSquare.innerHTML = ''; // Remove the captured pawn visually
-                    //         }
-                    //     }
-                    //     animatePiece(fromRow, fromCol, row, col, pieceElement, () => {
-                    //         handlePostMove(legalMove);
-                    //     });
-                    // }
-                    //  else {
-                    //     status.textContent = `${chess.turn() === 'w' ? 'White' : 'Black'}'s turn - Illegal move`;
-                    // }
-
-                    socket.emit("move", {
-                        roomId: ROOM_ID,
-                        move
-                        });
-
-                        pendingMove = null;
-                        selectedPiece = null;
-
-
-                    // selectedPiece = null;
+                    console.log('Sending move:', move);
+                    socket.emit("move", { roomId: ROOM_ID, move });
+                    selectedPiece = null;
                 }
             } else {
                 const piece = chess.get(squareNotation);
@@ -521,6 +491,7 @@
                     square.classList.add('selected');
                     selectedPiece = { row, col };
                     const moves = chess.moves({ square: squareNotation, verbose: true });
+                    console.log('Possible moves:', moves.length);
                     moves.forEach(move => {
                         const toRow = 8 - parseInt(move.to[1]);
                         const toCol = move.to.charCodeAt(0) - 97;
@@ -534,25 +505,9 @@
                 }
             }
         }
-
-        function handlePostMove(legalMove) {
-            if (legalMove.flags.includes('k') || legalMove.flags.includes('q')) {
-                const rookFromCol = legalMove.flags.includes('k') ? 7 : 0;
-                const rookToCol = legalMove.flags.includes('k') ? 5 : 3;
-                const rookRow = chess.turn() === 'b' ? 7 : 0;
-                const rookElement = board.querySelector(`.square[data-row="${rookRow}"][data-col="${rookFromCol}"] .piece`);
-                animatePiece(rookRow, rookFromCol, rookRow, rookToCol, rookElement, () => {});
-            }
-            renderBoard();
-        }
-
+    
+        // Initialize the board
         createBoard();
-
-        socket.on("gameState", (fen) => {
-            chess.load(fen);
-            renderBoard();
-        });
-
     </script>
 </body>
 </html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Lobby</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 450px;
+            width: 90%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 18px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .input-group {
+            margin: 20px 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .room-display {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            border: 2px dashed #667eea;
+        }
+
+        .room-code {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+            letter-spacing: 3px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .message.error {
+            background: #fadbd8;
+            color: #e74c3c;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #27ae60;
+        }
+
+        .spinner {
+            border: 4px solid rgba(102, 126, 234, 0.2);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>♔ Chess Lobby ♚</h1>
+
+        <div id="message" class="message hidden"></div>
+
+        <!-- Main Menu -->
+        <div id="mainMenu">
+            <button class="btn btn-primary" onclick="showCreateRoom()">Create New Room</button>
+            <button class="btn btn-primary" onclick="showJoinRoom()">Join Existing Room</button>
+        </div>
+
+        <!-- Create Room -->
+        <div id="createRoom" class="hidden">
+            <button class="btn btn-primary" onclick="createRoom()">Generate Room ID</button>
+            <button class="btn btn-secondary" onclick="backToMenu()">Back</button>
+        </div>
+
+        <!-- Waiting Room -->
+        <div id="waitingRoom" class="hidden">
+            <div class="room-display">
+                <p>Share this Room ID:</p>
+                <div class="room-code" id="roomCode"></div>
+                <button class="btn btn-secondary" style="margin-top: 10px;" onclick="copyRoomId()">📋 Copy</button>
+            </div>
+            <p style="text-align: center;">Waiting for player...</p>
+            <div class="spinner"></div>
+            <button class="btn btn-secondary" onclick="backToMenu()">Cancel</button>
+        </div>
+
+        <!-- Join Room -->
+        <div id="joinRoom" class="hidden">
+            <div class="input-group">
+                <label>Enter Room ID:</label>
+                <input type="text" id="roomInput" placeholder="ABCD-1234" maxlength="9">
+            </div>
+            <button class="btn btn-primary" onclick="joinRoom()">Join Room</button>
+            <button class="btn btn-secondary" onclick="backToMenu()">Back</button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let currentRoomId = null;
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type}`;
+            msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 4000);
+        }
+
+        function hideAll() {
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('createRoom').classList.add('hidden');
+            document.getElementById('waitingRoom').classList.add('hidden');
+            document.getElementById('joinRoom').classList.add('hidden');
+        }
+
+        function backToMenu() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            currentRoomId = null;
+            hideAll();
+            document.getElementById('mainMenu').classList.remove('hidden');
+        }
+
+        function showCreateRoom() {
+            hideAll();
+            document.getElementById('createRoom').classList.remove('hidden');
+        }
+
+        function showJoinRoom() {
+            hideAll();
+            document.getElementById('joinRoom').classList.remove('hidden');
+        }
+
+        function generateRoomId() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let id = '';
+            for (let i = 0; i < 4; i++) {
+                id += chars[Math.floor(Math.random() * chars.length)];
+            }
+            id += '-';
+            for (let i = 0; i < 4; i++) {
+                id += chars[Math.floor(Math.random() * chars.length)];
+            }
+            return id;
+        }
+
+        function createRoom() {
+            const roomId = generateRoomId();
+            currentRoomId = roomId;
+            
+            // Connect to socket only when needed
+            socket = io("http://localhost:3000");
+            
+            socket.on('connect', () => {
+                socket.emit('createRoom', roomId);
+            });
+
+            socket.on('roomCreated', () => {
+                hideAll();
+                document.getElementById('roomCode').textContent = roomId;
+                document.getElementById('waitingRoom').classList.remove('hidden');
+            });
+
+            socket.on('gameStart', () => {
+                window.location.href = `game.html?room=${roomId}`;
+            });
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+            
+            if (!roomId) {
+                showMessage('Please enter a room ID', 'error');
+                return;
+            }
+
+            currentRoomId = roomId;
+            
+            // Connect to socket only when needed
+            socket = io("http://localhost:3000");
+            
+            socket.on('connect', () => {
+                socket.emit('joinRoom', roomId);
+            });
+
+            socket.on('roomNotFound', () => {
+                showMessage('Room not found!', 'error');
+                socket.disconnect();
+                socket = null;
+            });
+
+            socket.on('roomFull', () => {
+                showMessage('Room is full!', 'error');
+                socket.disconnect();
+                socket = null;
+            });
+
+            socket.on('playerColor', () => {
+                window.location.href = `game.html?room=${roomId}`;
+            });
+        }
+
+        function copyRoomId() {
+            const code = document.getElementById('roomCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showMessage('Copied to clipboard!', 'success');
+            });
+        }
+
+        // Enter key support
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('roomInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') joinRoom();
+            });
+        });
+    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</body>
+</html>
